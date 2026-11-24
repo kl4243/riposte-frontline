@@ -1,0 +1,13 @@
+{
+  "name": "riposte-frontline",
+  "version": "1.0.1",
+  "private": true,
+  "description": "Riposte: Frontline 正式版 v1.0.0 —— 浏览器 FPS 游戏内置服务器",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

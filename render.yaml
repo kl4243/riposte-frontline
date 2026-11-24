@@ -1,0 +1,15 @@
+services:
+  # Riposte: Frontline 游戏服务器
+  # Render 免费层支持 WebSocket（2026-02 起 WS 消息可阻止休眠），单端口 Node 服务
+  - type: web
+    name: riposte-frontline
+    runtime: node
+    plan: free
+    region: singapore          # 新加坡，离中国大陆最近，延迟最低
+    buildCommand: ""           # 无第三方依赖，无需构建
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # HOST/PORT 由 Render 自动注入；server.js 已兼容 process.env.PORT 与 0.0.0.0

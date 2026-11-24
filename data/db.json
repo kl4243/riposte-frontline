@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "users": {
+    "11": {
+      "id": "12",
+      "username": "11",
+      "displayName": "11",
+      "salt": "cc0bb6c70b8f848b97adce4e5f819d25",
+      "passHash": "bc3c9d3678712d87d6bc9fb0b6822ba318af883fcb3a4261e8933f787df2a721dc655b919db00f64f44b6e04d14c16d7d9c69948d206caebfe6d7492e7cbc8aa",
+      "recoveryCode": "KA48MD8JY2",
+      "avatar": 0,
+      "moderator": false,
+      "banned": false,
+      "createdAt": "2026-11-24T03:47:31.878Z",
+      "xp": 0,
+      "stats": {
+        "kills": 0,
+        "deaths": 0,
+        "wins": 0,
+        "matches": 0,
+        "assists": 0,
+        "hits": 0,
+        "shots": 0,
+        "headshots": 0,
+        "bestStreak": 0,
+        "seconds": 0
+      },
+      "recent": [],
+      "arsenal": {
+        "v": 4,
+        "wxp": {},
+        "k": {},
+        "h": {},
+        "px": 0,
+        "cfg": {},
+        "lt": 0,
+        "custom": [
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "ch": {},
+        "cm": []
+      },
+      "friends": [],
+      "sent": [],
+      "received": [],
+      "invites": [],
+      "notifications": [
+        {
+          "id": "13",
+          "kind": "welcome",
+          "from": null,
+          "data": {},
+          "read": true,
+          "createdAt": "2026-11-24T03:47:31.878Z"
+        }
+      ],
+      "online": true,
+      "state": "salon",
+      "lastSeen": 1795492098713
+    },
+    "123456": {
+      "id": "1",
+      "username": "123456",
+      "displayName": "开发者",
+      "salt": "a12b5f4fa209ae757c121f60c82f876f",
+      "passHash": "dfd3301d1e6b6f1158c06bb7d01c270ec9427dc66295fdd4f3565eaf114fa1c57d414b435b5755505f177f4319d64986e9c8cba3310b5d9c757b121da6139d16",
+      "recoveryCode": "XVDZDXWHLH",
+      "avatar": 0,
+      "moderator": true,
+      "banned": false,
+      "title": "开发者团队",
+      "createdAt": "2026-11-24T03:33:44.330Z",
+      "xp": 15723488,
+      "stats": {
+        "kills": 0,
+        "deaths": 0,
+        "wins": 0,
+        "matches": 0,
+        "assists": 0,
+        "hits": 0,
+        "shots": 0,
+        "headshots": 0,
+        "bestStreak": 0,
+        "seconds": 0
+      },
+      "recent": [],
+      "arsenal": null,
+      "friends": [],
+      "sent": [],
+      "received": [],
+      "invites": [],
+      "notifications": [],
+      "createdBySystem": true,
+      "online": false,
+      "state": "menu",
+      "lastSeen": 1795491673970
+    }
+  },
+  "sessions": {
+    "6c157bcb82b280039e0bce131e6bd4be7593081bb87cb857": "123456",
+    "e28c0d06ba34255302e007f67078d010e85d4ddbd88becd4": "123456",
+    "ee41240af27eaedd89dc0324681c81fc2b7b868dbf8828ce": "123456",
+    "3b8b1fe4bed877a32b03ce1fe4b8d2843aa71e0b844cb74e": "123456",
+    "91628871f4a99ac23d213c2b361df3ba998e23ad07a6280c": "123456",
+    "bf75834aecb077b3a75d24a98fcf399e29a8f6824b6e5b01": "123456",
+    "0ec1799aab79b064f62d5a72201e5ee6f10cc0bec9c42c1d": "123456",
+    "b60ae75dbdca80ccdd7c410158cf884a0c8e82824437baa2": "123456",
+    "6608dd9373abb8d76a02909c9dd5c70b5426abf0e382bca6": "123456",
+    "3d0ebcff0580525ecfe164755dbc653672bb9ca118f1c61f": "11",
+    "70b9f90d76dc0c5daf0bdb5c619a6708f404019644e7e496": "11"
+  },
+  "matches": {
+    "8b81c43a5f16d4c2bf69bb29f6218d24": {
+      "username": "11",
+      "at": 1795492109970,
+      "used": false
+    }
+  },
+  "posts": [],
+  "reports": [],
+  "seq": 14
+}
