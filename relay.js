@@ -404,7 +404,9 @@ function srvMsg(room, ws, raw) {
       const target = m.id ? room.players.get(m.id) : me;
       if (!target) return;
       if (target.id !== me.id && !isOwner) return;
-      target.t = 1 - target.t;
+      // 兼容两种用法：m.t 指定目标队（0/1，供"左右选边"按钮调用），否则翻转
+      if (m.t === 0 || m.t === 1) target.t = m.t;
+      else target.t = 1 - target.t;
       srvBroadcast(room);
       break;
     }
@@ -424,7 +426,15 @@ function srvMsg(room, ws, raw) {
     }
     case 'lv': { me.lv = clampInt(m.lv, 0, 999, me.lv); srvBroadcast(room); break; }
     case 'h': { me.h = clampInt(m.h, 0, 2, me.h); me.jeu = m.jeu ? 1 : 0; break; }
-    case 'ouvert':
+    case 'ouvert': {
+      // 房主已把对局中继房间开好：进入 partie 并广播，让所有成员同步加入对局
+      if (room.wait && String(m.code) === room.code) room.wait = null;
+      if (String(m.code) === room.code && room.phase === 'lancement') {
+        room.phase = 'partie';
+        srvBroadcast(room);
+      }
+      break;
+    }
     case 'fin':
     case 'echec': {
       // 对局交接结果回执：由被选为房主的客户端回报

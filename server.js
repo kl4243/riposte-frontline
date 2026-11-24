@@ -431,7 +431,7 @@ function serveStatic(req, res, pathname) {
   }
   // 版本检查文件：返回与页面一致的 build，避免触发"自动更新"重载
   if (pathname === '/version.json') {
-    sendJSON(res, 200, { build: '9cb4df621b36' });
+    sendJSON(res, 200, { build: 'f8c1331e961f' });
     return true;
   }
   if (pathname === '/manifest.webmanifest') {
@@ -848,8 +848,11 @@ async function handleAPI(req, res, pathname, query, me, body) {
     if (!me) return fail(res, 401, '未登录');
     const target = findUserByLogin(body.username);
     if (!target) return fail(res, 404, '找不到该玩家');
-    const code = String(body.code || '').toUpperCase();
-    if (!/^[A-Z0-9]{5}$/.test(code)) return fail(res, 422, '邀请码无效');
+    const raw = String(body.code || '').trim();
+    // 公共房间号形如 abc7（小写字母+数字），对局码形如 A1B2C（5 位大写）；两种都要接受
+    const isRoomId = /^[a-z]{3}[0-9]{1,2}$/i.test(raw);
+    const code = isRoomId ? raw.toLowerCase() : raw.toUpperCase();
+    if (!isRoomId && !/^[A-Z0-9]{5}$/.test(code)) return fail(res, 422, '邀请码无效');
     if (relation(me, target) !== 'friend') return fail(res, 403, '只能邀请好友');
     const id = newId();
     if (!Array.isArray(target.invites)) target.invites = [];
@@ -889,14 +892,26 @@ async function handleAPI(req, res, pathname, query, me, body) {
     reports.forEach((r) => {
       const key = normKey(r.username);
       if (!grouped[key]) {
-        const u = db.users[r.username];
+        const u = db.users[r.username] || findUserByLogin(r.username);
         grouped[key] = {
-          username: r.username, displayName: u ? u.displayName : r.username,
-          avatar: u ? (u.avatar || 0) : 0, avatarHidden: r.reason === 'photo',
-          reasons: {}, stats: u ? Object.assign(blankStats(), u.stats) : blankStats()
+          username: u ? u.username : r.username,
+          displayName: u ? (u.displayName || u.username) : r.username,
+          avatar: u ? (u.avatar || 0) : 0,
+          avatarHidden: !!(u && u.avatarHidden) || r.reason === 'photo',
+          level: u ? levelOfXp(u.xp || 0) : 1,
+          createdAt: u ? (u.createdAt || '') : '',
+          blockedAt: u ? (u.blockedAt || '') : '',
+          removed: !!(u && u.removed),
+          reasons: {},
+          notes: [],
+          stats: u ? Object.assign(blankStats(), u.stats) : blankStats()
         };
       }
-      grouped[key].reasons[r.reason || '其他'] = (grouped[key].reasons[r.reason || '其他'] || 0) + 1;
+      const g = grouped[key];
+      const reason = r.reason || '其他';
+      g.reasons[reason] = (g.reasons[reason] || 0) + 1;
+      // 前端 modRender() 依赖 notes 数组逐条渲染举报详情，缺失会导致 .map() 抛错
+      g.notes.push({ by: r.from || '?', reason, at: r.at || Date.now(), note: r.note || '' });
     });
     return ok(res, { accounts: Object.values(grouped), open: openReportCount() });
   }
@@ -905,10 +920,30 @@ async function handleAPI(req, res, pathname, query, me, body) {
     const target = findUserByLogin(body.username);
     if (!target) return fail(res, 404, '找不到该玩家');
     const action = String(body.action || '');
-    if (action === 'block') { target.banned = true; db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username)) r.action = 'block'; }); }
-    else if (action === 'unblock') { target.banned = false; db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username)) { r.resolved = true; r.action = 'unblock'; } }); }
-    else if (action === 'ignore') { db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username)) r.resolved = true; }); }
-    else return fail(res, 422, '未知操作');
+    if (action === 'block') {
+      target.banned = true; target.blockedAt = Date.now();
+      // 封禁同时踢掉该账号所有会话，令其所有设备立即掉线
+      for (const [sid, name] of Object.entries(db.sessions)) {
+        if (normKey(name) === normKey(target.username)) delete db.sessions[sid];
+      }
+      db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username)) { r.action = 'block'; r.resolved = true; } });
+    } else if (action === 'unblock') {
+      target.banned = false; target.blockedAt = '';
+      db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username)) { r.resolved = true; r.action = 'unblock'; } });
+    } else if (action === 'ignore') {
+      db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username)) r.resolved = true; });
+    } else if (action === 'photo') {
+      target.avatar = 0; target.avatarHidden = false; notify(target, 'mod_photo', me, {});
+      db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username) && r.reason === 'photo') r.resolved = true; });
+    } else if (action === 'name') {
+      target.displayName = target.username;
+      if (target.title && target.title !== DEV_TITLE && !validTitle(target, target.title)) target.title = '';
+      notify(target, 'mod_name', me, {});
+      db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username) && r.reason === 'nom') r.resolved = true; });
+    } else if (action === 'board') {
+      target.removed = true; notify(target, 'mod_board', me, {});
+      db.reports.forEach((r) => { if (normKey(r.username) === normKey(target.username) && r.reason === 'triche') r.resolved = true; });
+    } else return fail(res, 422, '未知操作');
     save();
     return ok(res, {});
   }
@@ -1115,7 +1150,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 server.listen(PORT, HOST, () => {
   console.log('============================================================');
-  console.log('  Riposte: Frontline 正式版 v1.0.0 —— 服务器已启动');
+  console.log('  Riposte: Frontline 正式版 v2.0 —— 服务器已启动');
   console.log(`  访问地址: http://localhost:${PORT}`);
   console.log('  开发者账号: 123456 / 123456');
   console.log(`  数据目录: ${DATA_DIR}`);
