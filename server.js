@@ -93,6 +93,33 @@ function loadDB() {
   return freshDB();
 }
 db = loadDB();
+// ---- 数据自愈：规范化/补全用户记录，保证老账号与损坏数据可恢复 ----
+function healDB() {
+  let changed = false;
+  db.users = db.users || {};
+  db.sessions = db.sessions || {};
+  db.matches = db.matches || {};
+  db.posts = Array.isArray(db.posts) ? db.posts : [];
+  db.reports = Array.isArray(db.reports) ? db.reports : [];
+  db.seq = Number(db.seq) || 1;
+  const arrFields = ['recent', 'friends', 'sent', 'received', 'invites', 'notifications'];
+  for (const [key, u] of Object.entries(db.users)) {
+    if (!u || typeof u !== 'object') { delete db.users[key]; changed = true; continue; }
+    if (!u.username) { u.username = key; changed = true; }
+    if (!u.id) { u.id = String(db.seq++); changed = true; }
+    if (typeof u.xp !== 'number' || !isFinite(u.xp)) { u.xp = 0; changed = true; }
+    // 游戏数据：统计字段补全（永久保存的关键字段）
+    const st = Object.assign(blankStats(), u.stats && typeof u.stats === 'object' ? u.stats : {});
+    for (const k in st) if (typeof st[k] !== 'number' || !isFinite(st[k]) || st[k] < 0) { st[k] = 0; changed = true; }
+    u.stats = st;
+    if (!u.displayName) { u.displayName = u.username; changed = true; }
+    if (u.banned === undefined) { u.banned = false; changed = true; }
+    for (const f of arrFields) if (!Array.isArray(u[f])) { u[f] = []; changed = true; }
+    if (u.avatar === undefined) { u.avatar = 0; changed = true; }
+    if (!u.createdAt) { u.createdAt = new Date().toISOString(); changed = true; }
+  }
+  if (changed) { try { writeDB(); } catch (_) {} }
+}
 // 限制无界增长：会话与对局记录保留上限，避免长期运行内存膨胀
 (function pruneDB() {
   const MAX_SESSIONS = 20000, MAX_MATCHES = 20000;
@@ -104,6 +131,7 @@ db = loadDB();
 
 let saveTimer = null;
 let saveFailures = 0;
+healDB();  // 启动自愈：补全老账号缺失的游戏数据字段
 function writeDB() {
   const data = JSON.stringify(db, null, 2);
   const tmp = DB_FILE + '.tmp';
@@ -253,7 +281,7 @@ function issueSession(res, user, req) {
   res.setHeader('X-Session-Token', sid);
   // 经 HTTPS 反代时用 SameSite=None; Secure，支持跨站 iframe；本地 HTTP 保持 Lax。
   const proxyHttps = isProxyHttps(req);
-  const cookie = isProxyHttps(req)
+  const cookie = proxyHttps
     ? `${COOKIE_NAME}=${sid}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=None`
     : `${COOKIE_NAME}=${sid}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; SameSite=Lax`;
   res.setHeader('Set-Cookie', cookie);
@@ -365,9 +393,16 @@ function postView(p, viewer) {
 // ---------------------------------------------------------------------------
 // HTTP 响应助手
 // ---------------------------------------------------------------------------
+// 统一安全响应头（不阻断 iframe 嵌入与 WebSocket 升级）
+const SEC_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+  'X-XSS-Protection': '0'
+};
 function sendJSON(res, status, obj, extraHeaders) {
   const body = JSON.stringify(obj == null ? {} : obj);
-  res.writeHead(status, Object.assign({
+  res.writeHead(status, Object.assign({}, SEC_HEADERS, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
     'Cache-Control': 'no-store'
@@ -431,7 +466,7 @@ function serveStatic(req, res, pathname) {
   }
   // 版本检查文件：返回与页面一致的 build，避免触发"自动更新"重载
   if (pathname === '/version.json') {
-    sendJSON(res, 200, { build: 'f8c1331e961f' });
+    sendJSON(res, 200, { build: 'b5d8a56d6c73' });
     return true;
   }
   if (pathname === '/manifest.webmanifest') {
@@ -533,12 +568,15 @@ async function handleAPI(req, res, pathname, query, me, body) {
 
   // -------- 账号：登录 / 注册 --------
   if (name === 'login' && method === 'POST') {
+    const clip = String((req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown');
+    if (authLocked(clip)) return fail(res, 429, '尝试次数过多，请稍后再试');
     const user = findUserByLogin(body.login);
-    if (!user || !checkPassword(user, body.password)) return fail(res, 401, '用户名或密码错误');
+    if (!user || !checkPassword(user, body.password)) { authFail(clip); return fail(res, 401, '用户名或密码错误'); }
     if (user.banned) return fail(res, 403, '账号已被封禁');
+    authOk(clip);
     issueSession(res, user, req);
     const data = accountPayload(user, user);
-    if (!user.recoveryCode) { user.recoveryCode = randomCode(); save(); data.recoveryCode = user.recoveryCode; }
+    if (!user.recoveryCode) { user.recoveryCode = randomCode(); saveNow(); data.recoveryCode = user.recoveryCode; }
     return ok(res, data);
   }
   if (name === 'register' && method === 'POST') {
@@ -558,7 +596,7 @@ async function handleAPI(req, res, pathname, query, me, body) {
     };
     db.users[username] = user;
     notify(user, 'welcome', null, {});
-    save();
+    saveNow();  // 新注册账号立即落盘，永久保存
     issueSession(res, user, req);
     const data = accountPayload(user, user);
     data.recoveryCode = user.recoveryCode;
@@ -590,7 +628,7 @@ async function handleAPI(req, res, pathname, query, me, body) {
     if (!checkPassword(me, body.current || '')) return fail(res, 422, '当前密码不正确');
     if (String(body.next || '').length < 6) return fail(res, 422, '新密码至少需要 6 位');
     const p = makePassword(body.next);
-    me.salt = p.salt; me.passHash = p.passHash; me.recoveryCode = randomCode(); save();
+    me.salt = p.salt; me.passHash = p.passHash; me.recoveryCode = randomCode(); saveNow();
     const data = accountPayload(me, me); data.recoveryCode = me.recoveryCode;
     return ok(res, data);
   }
@@ -600,7 +638,7 @@ async function handleAPI(req, res, pathname, query, me, body) {
       return fail(res, 422, '用户名或恢复码不正确');
     if (String(body.password || '').length < 6) return fail(res, 422, '新密码至少需要 6 位');
     const p = makePassword(body.password);
-    user.salt = p.salt; user.passHash = p.passHash; user.recoveryCode = randomCode(); save();
+    user.salt = p.salt; user.passHash = p.passHash; user.recoveryCode = randomCode(); saveNow();
     issueSession(res, user, req);
     const data = accountPayload(user, user); data.recoveryCode = user.recoveryCode;
     return ok(res, data);
@@ -609,7 +647,7 @@ async function handleAPI(req, res, pathname, query, me, body) {
     if (!me) return fail(res, 401, '未登录');
     if (String(body.password || '').length < 6) return fail(res, 422, '密码至少需要 6 位');
     const p = makePassword(body.password);
-    me.salt = p.salt; me.passHash = p.passHash; me.recoveryCode = randomCode(); save();
+    me.salt = p.salt; me.passHash = p.passHash; me.recoveryCode = randomCode(); saveNow();
     const data = accountPayload(me, me); data.recoveryCode = me.recoveryCode;
     return ok(res, data);
   }
@@ -1068,7 +1106,21 @@ function rateAllowed(ip) {
 setInterval(() => {
   const now = Date.now();
   for (const [ip, e] of rateMap) if (now - e.t > RATE_WINDOW * 5) rateMap.delete(ip);
+  for (const [ip, e] of authFails) if (now - e.until > 0) authFails.delete(ip);
 }, 30000).unref?.();
+
+// ---- 认证防暴破：同一 IP 连续登录失败会临时锁定 ----
+const authFails = new Map();  // ip -> { n, until }
+function authLocked(ip) { const e = authFails.get(ip); return !!(e && e.until > Date.now()); }
+function authFail(ip) {
+  const now = Date.now();
+  let e = authFails.get(ip);
+  if (!e || e.until <= now) e = { n: 0, until: 0 };
+  e.n++;
+  if (e.n >= 8) { e.until = now + 60000; e.n = 0; }  // 8 次失败锁 60 秒
+  authFails.set(ip, e);
+}
+function authOk(ip) { authFails.delete(ip); }
 
 const server = http.createServer(async (req, res) => {
   // 请求级兜底：任何异常都不应导致进程退出
@@ -1150,7 +1202,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 server.listen(PORT, HOST, () => {
   console.log('============================================================');
-  console.log('  Riposte: Frontline 正式版 v2.0 —— 服务器已启动');
+  console.log('  Riposte: Frontline 正式版 v3.0.0 —— 服务器已启动');
   console.log(`  访问地址: http://localhost:${PORT}`);
   console.log('  开发者账号: 123456 / 123456');
   console.log(`  数据目录: ${DATA_DIR}`);
