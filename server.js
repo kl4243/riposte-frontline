@@ -1202,7 +1202,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 server.listen(PORT, HOST, () => {
   console.log('============================================================');
-  console.log('  Riposte: Frontline 正式版 v3.5.0 —— 服务器已启动');
+  console.log('  Riposte: Frontline 正式版 v3.6.0 —— 服务器已启动');
   console.log(`  访问地址: http://localhost:${PORT}`);
   console.log('  开发者账号: 123456 / 123456');
   console.log(`  数据目录: ${DATA_DIR}`);
